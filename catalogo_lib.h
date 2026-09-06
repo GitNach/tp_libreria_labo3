@@ -7,9 +7,9 @@
 #define LARGO_AUTOR 128
 #define LARGO_LINEA 512
 
-void agregar_libro(const char *titulo, const char *autor);
+int agregar_libro(const char *titulo, const char *autor, int anio);
 
-void listar_libros(void);
+int listar_libros(void);
 
 int buscar_libros(const char *texto);
 
