@@ -1,47 +1,20 @@
-# Catalogo de libros
+# Trabajos grupales - Laboratorio III
 
-Trabajo practico para Laboratorio III.
+Los trabajos están separados por módulo.
 
-## Compilacion
+## Estructura
+
+- `Modulo3`: catálogo de libros y biblioteca propia.
+- `Modulo6`: trabajos grupales del módulo 6.
+
+## Módulo 3
+
+Para compilar y ejecutar el catálogo:
 
 ```sh
+cd Modulo3
 make
-```
-
-El ejecutable generado se llama `catalogo` y `make` crea el archivo `catalogo.txt`.
-
-## Uso
-
-Agregar un libro:
-
-```sh
-./catalogo agregar "El nombre de la rosa" "Umberto Eco" 1980
-```
-
-Listar los libros:
-
-```sh
 ./catalogo listar
 ```
 
-Buscar por titulo o autor:
-
-```sh
-./catalogo buscar rosa
-```
-
-El formato de cada registro es:
-
-```text
-id|titulo|autor|anio
-```
-
-Los titulos y autores no pueden contener `|` ni saltos de linea. El ID se genera
-aleatoriamente y se verifica que no este repetido.
-
-## Archivos
-
-- `catalogo.c`: programa principal y argumentos de consola.
-- `catalogo_lib.h`: interfaz de la biblioteca.
-- `catalogo_lib.c`: operaciones sobre el archivo y busquedas.
-- `Makefile`: compilacion incremental y limpieza.
+Cada módulo tiene su propio `README.md` con las instrucciones específicas.
