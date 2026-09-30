@@ -7,26 +7,26 @@
 #define SEM_MUTEX_NOMBRE "/estacionamiento_mutex"
 
 #define CAPACIDAD_BUFFER 10
+
+/* Largo de la patente, incluyendo el '\0' final. */
 #define LARGO_PATENTE 8
 
-struct Vehiculo
-{
-    int ticket;
-    char patente[LARGO_PATENTE];
+/* Estructura que representa un vehiculo que ingresa al estacionamiento.*/
+struct Vehiculo{
+    int ticket;                    
+    char patente[LARGO_PATENTE];    
 };
 
-struct BufferEstacionamiento
-{
+
+struct BufferEstacionamiento{
     struct Vehiculo vehiculos[CAPACIDAD_BUFFER];
-    int cabeza;
-    int cola;
+    int cabeza;                     
+    int cola;                       
 };
 
 void generar_patente(char *patente);
 void preparar_vehiculo(struct Vehiculo *vehiculo, int ticket);
-void ingresar_vehiculo(struct BufferEstacionamiento *buffer,
-                       const struct Vehiculo *vehiculo);
-void retirar_vehiculo(struct BufferEstacionamiento *buffer,
-                      struct Vehiculo *vehiculo);
+void ingresar_vehiculo(struct BufferEstacionamiento *buffer, const struct Vehiculo *vehiculo);
+void retirar_vehiculo(struct BufferEstacionamiento *buffer, struct Vehiculo *vehiculo);
 
 #endif

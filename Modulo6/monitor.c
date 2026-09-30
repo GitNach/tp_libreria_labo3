@@ -7,16 +7,13 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <semaphore.h>
+#include <errno.h>
 
 #include "estacionamiento.h"
 
-/* Intervalo entre vehiculos en microsegundos (500 ms) */
-#define INTERVALO_US 500000
-
-/* Cantidad por defecto de vehiculos a generar */
+/* Cantidad por defecto de vehiculos a retirar */
 #define CANTIDAD_DEFAULT 20
 
-/* Variables globales */
 static struct BufferEstacionamiento *buffer = NULL;
 static sem_t *sem_vacios = NULL;
 static sem_t *sem_llenos = NULL;
@@ -27,22 +24,31 @@ static void liberar_recursos(void);
 
 static int inicializar_recursos(void){
     int descriptor;
+    int intentos;
 
-    /* Crear la memoria compartida. */
-    descriptor = shm_open(SHM_NOMBRE, O_CREAT | O_RDWR, 0600);
+    intentos = 0;
+    descriptor = -1;
+    while (intentos < 10) {
+        descriptor = shm_open(SHM_NOMBRE, O_RDWR, 0);
+        if (descriptor != -1) {
+            break;
+        }
+        if (errno == ENOENT) {
+            /* La entrada todavia no arranco, esperamos un poco. */
+            printf("[Monitor] Esperando a la entrada...\n");
+            sleep(1);
+            intentos++;
+        } else {
+            perror("shm_open");
+            return -1;
+        }
+    }
+
     if (descriptor == -1) {
-        perror("shm_open");
+        fprintf(stderr, "[Monitor] La entrada no esta corriendo.\n");
         return -1;
     }
 
-    /* Definir el tamaño de la memoria compartida. */
-    if (ftruncate(descriptor, sizeof(struct BufferEstacionamiento)) == -1) {
-        perror("ftruncate");
-        close(descriptor);
-        return -1;
-    }
-
-    /* Mapear la memoria compartida en el espacio de direcciones. */
     buffer = mmap(NULL, sizeof(struct BufferEstacionamiento), PROT_READ | PROT_WRITE, MAP_SHARED, descriptor, 0);
     if (buffer == MAP_FAILED) {
         perror("mmap");
@@ -50,27 +56,21 @@ static int inicializar_recursos(void){
         return -1;
     }
 
-    /* El descriptor ya no es necesario después de mmap. */
     close(descriptor);
 
-    /* El productor inicializa los índices del buffer circular. */
-    buffer->cabeza = 0;
-    buffer->cola = 0;
-
-    /* Crear los semáforos del patrón productor-consumidor. */
-    sem_vacios = sem_open(SEM_VACIOS_NOMBRE, O_CREAT, 0600, CAPACIDAD_BUFFER);
+    sem_vacios = sem_open(SEM_VACIOS_NOMBRE, 0);
     if (sem_vacios == SEM_FAILED) {
         perror("sem_open vacios");
         return -1;
     }
 
-    sem_llenos = sem_open(SEM_LLENOS_NOMBRE, O_CREAT, 0600, 0);
+    sem_llenos = sem_open(SEM_LLENOS_NOMBRE, 0);
     if (sem_llenos == SEM_FAILED) {
         perror("sem_open llenos");
         return -1;
     }
 
-    sem_mutex = sem_open(SEM_MUTEX_NOMBRE, O_CREAT, 0600, 1);
+    sem_mutex = sem_open(SEM_MUTEX_NOMBRE, 0);
     if (sem_mutex == SEM_FAILED) {
         perror("sem_open mutex");
         return -1;
@@ -79,6 +79,7 @@ static int inicializar_recursos(void){
     return 0;
 }
 
+
 static void liberar_recursos(void){
     if (buffer != NULL && buffer != MAP_FAILED) {
         munmap(buffer, sizeof(struct BufferEstacionamiento));
@@ -86,15 +87,20 @@ static void liberar_recursos(void){
 
     if (sem_vacios != NULL && sem_vacios != SEM_FAILED) {
         sem_close(sem_vacios);
+        sem_unlink(SEM_VACIOS_NOMBRE);
     }
 
     if (sem_llenos != NULL && sem_llenos != SEM_FAILED) {
         sem_close(sem_llenos);
+        sem_unlink(SEM_LLENOS_NOMBRE);
     }
 
     if (sem_mutex != NULL && sem_mutex != SEM_FAILED) {
         sem_close(sem_mutex);
+        sem_unlink(SEM_MUTEX_NOMBRE);
     }
+
+    shm_unlink(SHM_NOMBRE);
 }
 
 int main(int argc, char *argv[]){
@@ -111,48 +117,44 @@ int main(int argc, char *argv[]){
         cantidad = CANTIDAD_DEFAULT;
     }
 
-    srand(time(NULL));
-
-    printf("[Entrada] Generando %d vehiculos.\n", cantidad);
+    printf("[Monitor] Iniciando...\n");
+    printf("[Monitor] Esperando %d vehiculos.\n\n", cantidad);
 
     if (inicializar_recursos() == -1) {
-        fprintf(stderr, "[Entrada] Error inicializando recursos.\n");
+        fprintf(stderr, "[Monitor] Error inicializando recursos.\n");
+        liberar_recursos();
         return EXIT_FAILURE;
     }
 
-    for (i = 0; i < cantidad; i++) {
-        preparar_vehiculo(&vehiculo, i + 1);
+    printf("[Monitor] Conectado a la entrada. Registrando salidas...\n\n");
 
-        /* Esperar a que exista un lugar libre. */
-        if (sem_wait(sem_vacios) == -1) {
-            perror("sem_wait vacios");
+    for (i = 0; i < cantidad; i++) {
+        if (sem_wait(sem_llenos) == -1) {
+            perror("sem_wait llenos");
             liberar_recursos();
             return EXIT_FAILURE;
         }
 
-        /* Proteger la escritura del vehículo y el avance de cabeza. */
         if (sem_wait(sem_mutex) == -1) {
             perror("sem_wait mutex");
             liberar_recursos();
             return EXIT_FAILURE;
         }
 
-        ingresar_vehiculo(buffer, &vehiculo);
+        retirar_vehiculo(buffer, &vehiculo);
 
         sem_post(sem_mutex);
 
-        /* Avisar que hay un vehículo disponible para el monitor. */
-        sem_post(sem_llenos);
+        sem_post(sem_vacios);
 
-        printf("[Entrada] Ticket %d | Patente %s\n", vehiculo.ticket, vehiculo.patente);
-
-        /* Esperar antes del proximo vehiculo. */
-        usleep(INTERVALO_US);
+        printf("[Monitor] #%d | Ticket %d | Patente %s\n", i + 1, vehiculo.ticket, vehiculo.patente);
     }
 
-    printf("[Entrada] Finalizo la generacion.\n");
+    printf("\n[Monitor] Terminado. Se registraron %d salidas.\n", cantidad);
 
     liberar_recursos();
+
+    printf("[Monitor] Recursos eliminados del sistema.\n");
 
     return EXIT_SUCCESS;
 }
